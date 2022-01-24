@@ -98,3 +98,6 @@ dmypy.json
 
 # Cython debug symbols
 cython_debug/
+
+# Mac Finder turds
+.DS_Store
