@@ -1,0 +1,17 @@
+[tool.poetry]
+name = "cspm-aws-autoremediation"
+version = "0.1.0"
+description = ""
+authors = ["Jeremiah Sullenger <jsullenger@cloudrise.com>"]
+
+[tool.poetry.dependencies]
+python = "^3.9"
+requests = "^2.27.1"
+boto3 = "^1.20.40"
+
+[tool.poetry.dev-dependencies]
+pytest = "^6.2.5"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
