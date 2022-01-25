@@ -14,6 +14,8 @@ Metadata:
         default: CIS-1-2-0-4-1 - wide open port 22 remediation
       CIS12042SecurityGroupsPort3389:
         default: CIS-1-2-0-4-2 - wide open port 3389 remediation
+      S3DLPLabelAction:
+        default: DLP Scan Label S3 Object remediation
 
 Parameters:
   NetskopeTenantFQDN:
@@ -46,6 +48,13 @@ Parameters:
       - 'yes'
       - 'no'
     Type: 'String'
+  S3DLPLabelAction:
+    Default: 'yes'
+    Description: 'Deploy remediation for DLP Scan - Label S3 Object'
+    AllowedValues:
+      - 'yes'
+      - 'no'
+    Type: 'String'
 Conditions: 
   CIS12029VPCFlowLogsEnabled: !Equals
       - !Ref CIS12029VPCFlowLogs
@@ -55,6 +64,9 @@ Conditions:
       - 'yes'
   CIS12042SecurityGroupsPort3389Enabled: !Equals
       - !Ref CIS12042SecurityGroupsPort3389
+      - 'yes'
+  S3DLPLabelActionEnabled: !Equals
+      - !Ref S3DLPLabelAction
       - 'yes'
   CIS12041SecurityGroupsEnabled: !Or 
     - !Condition CIS12041SecurityGroupsPort22Enabled
@@ -229,7 +241,98 @@ Resources:
       Action: "lambda:InvokeFunction"
       Principal: events.amazonaws.com
       SourceArn: !Sub 'arn:aws:events:${AWS::Region}:${AWS::AccountId}:rule/CIS-1-2-0-4-2-SecurityGroups3389-GetResultsFromNetskope'
-     
+ 
+  GetNetskopeDLPScanResultsLFRole:
+      Type: 'AWS::IAM::Role'
+      Properties: 
+        RoleName: !Sub "GetNetskopeDLPScanResultsLFRole_${AWS::Region}"
+        Tags: 
+          - Key: Type
+            Value: GetNetskopeDLPScanResultsLFRole
+        AssumeRolePolicyDocument:
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service:
+                  - lambda.amazonaws.com
+              Action:
+                - sts:AssumeRole
+        Path: '/'
+        Policies:
+            - PolicyName: !Sub "GetNetskopeDLPScanResultsLFPolicy_${AWS::Region}"
+              PolicyDocument:
+                Statement:
+                  - Effect: Allow
+                    Action:
+                      - "logs:CreateLogGroup"
+                      - "logs:CreateLogStream"
+                      - "logs:PutLogEvents"
+                    Resource:
+                      - "*"
+                  - Effect: Allow
+                    Action:
+                      - 's3:PutObject'
+                    Resource:
+                      - !Join
+                        - '/'
+                        - - !GetAtt AssesmentResultsS3Bucket.Arn
+                          - '*'
+                  - Effect: Allow
+                    Action:
+                      - 'secretsmanager:GetSecretValue'
+                      - 'secretsmanager:DescribeSecret'
+                    Resource: !Ref APISecret
+
+  GetNetskopeDLPScanResultsLF:
+      Type: 'AWS::Lambda::Function'
+      Properties:
+        Description: >-
+          This lambda function calls Netskope API to retrieve AWS DLP Scan results and save them in the S3 bucket.
+        Handler: 'lambda_function.lambda_handler'
+        Role: !GetAtt GetNetskopeDLPScanResultsLFRole.Arn
+        Code:
+          S3Bucket: !Join ['-', [!FindInMap ["SourceCode", "General", "S3Bucket"], !Ref 'AWS::Region']]
+          S3Key: !Join ['/', [!FindInMap ["SourceCode", "General", "S3Prefix"], 'GetNetskopeSecurityPostureAssesmentLambda.zip']]
+        Environment:
+          Variables:
+            tenant_fqdn: !Ref NetskopeTenantFQDN
+            security_assessment_results_s3_bucket: !Ref AssesmentResultsS3Bucket
+            api_token: !Ref APISecret
+            LOGLEVEL: 'INFO'
+        Runtime: python3.8
+        MemorySize: 128
+        Timeout: 300
+        Tags: 
+          - Key: Type
+            Value: GetNetskopeDLPScanResultsLF
+
+  EventRuleScheduledS3DLPLabelAction: 
+    Type: AWS::Events::Rule
+    DependsOn: GetNetskopeDLPScanResultsLF
+    Condition: S3DLPLabelActionEnabled
+    Properties: 
+      Name: S3-DLP-Label-Action-GetResultsFromNetskope
+      Description: "Scheduled event Rule for GetNetskopeDLPScanResultsLF Lambda function - S3 object labeling action"
+      ScheduleExpression: "rate(10 minutes)"
+      State: "ENABLED"
+      Targets: 
+        - 
+          Arn: 
+            Fn::GetAtt: 
+              - "GetNetskopeDLPScanResultsLF"
+              - "Arn"
+          Id: "GetNetskopeDLPScanResultsLF"
+          Input: '{"action":"Label-S3-Objects","policies":"", "profiles": "", "rules": ""}'
+
+  PermissionToInvokeGetNetskopeDLPScanResultsLFS3DLPLabelAction:
+    Type: AWS::Lambda::Permission
+    Properties: 
+      FunctionName: 
+        Ref: "GetNetskopeDLPScanResultsLF"
+      Action: "lambda:InvokeFunction"
+      Principal: events.amazonaws.com
+      SourceArn: !Sub 'arn:aws:events:${AWS::Region}:${AWS::AccountId}:rule/S3-DLP-Label-Action-GetResultsFromNetskope'
+
   CIS12029VPCFlowLogsLambdaRole:
       Type: 'AWS::IAM::Role'
       Condition: CIS12029VPCFlowLogsEnabled

@@ -1,3 +1,4 @@
+from email import policy
 import boto3
 import botocore
 from datetime import datetime, timezone
@@ -13,14 +14,16 @@ from utils.logger import Logger
 LOG_LEVEL = os.getenv('LOGLEVEL', 'info')
 logger = Logger(loglevel=LOG_LEVEL)
 
-# s3_client = boto3.client("s3")
+
+
+s3_client = boto3.client("s3")
 # LOCAL_FILE_SYS = "/tmp"
 LOCAL_FILE_SYS = "./tmp"
-# S3_BUCKET = os.environ['dlp_scan_alert_results_s3_bucket']
+S3_BUCKET = os.environ['dlp_scan_alert_results_s3_bucket']
 tenant_fqdn = os.environ['tenant_fqdn']
 PAGE_SIZE = 100
 AWS_REGION = os.getenv('AWS_REGION', 'us-east-1')
-# secret_arn = os.environ['api_token']
+secret_arn = os.environ['api_token']
 AWS_REGIONS={
   "us-east-1": "US East(N. Virginia)",
   "us-east-2": "US East(Ohio)",
@@ -28,48 +31,78 @@ AWS_REGIONS={
   "us-west-2": "US West(Oregon)"
 }
 
+
 def lambda_handler(event, context):
-   
-    # TODO Filter alerts for action by Policies, profiles, and rules.
 
     # token = json.loads(get_secret(secret_arn))['token']
     token = "2730ce508a7e12d1dcd00620f5de7cc2"
-
-
     action_name = event['action']
+    policies = event['policies']
+    profiles = event['profiles']
+    rules = event['rules']
+
+    # get cursor timestamp from s3. Add 1 to it.
+    start_time = get_last_timestamp(S3_BUCKET, action_name) + 1
+    last_timestamp = start_time 
 
     file_name = os.path.expandvars(os.path.join(LOCAL_FILE_SYS, f"{tenant_fqdn}.{action_name}.{datetime.now().strftime('%Y%m%d%H%M%S')}"))
     with open(file_name, "w") as file:
-        # TODO: Pull last timestamp from cursor for this action.
-
         page = 0
         y = 0
-        resp = get_status(action_name, token, str(PAGE_SIZE), str(page*PAGE_SIZE))
+        resp = get_alerts(action_name, token, str(PAGE_SIZE), str(page*PAGE_SIZE), start_time)
         logger.debug(resp)
         count = 0
         while len(resp):
             for item in resp:
-                resource_id = f"arn:aws:s3:::{item['file_path']}"
-                # Assumes the last field in the instance name is the account id.
-                account_id = item["instance"].split('_')[-1]
-                bucket_id = resource_id.split("/")[0]
-                logger.info(f"Got alert for the account {account_id} instance: {item['instance']} resource_id: {resource_id} bucket_id: {bucket_id} policy_name: {item['policy']} profile_name: {item['dlp_profile']} rule_name: {item['dlp_rule']}")
-                file.write(f"{account_id}, {resource_id}, {item['policy']}, {item['dlp_profile']}, {item['dlp_rule']}\n")
-                count += 1
+                policy = item["policy"]
+                profile = item["dlp_profile"]
+                rule = item["dlp_rule"]
+                # If the current item is in the configured policy, profile or ruleset for this action then add it to the result.
+                if policy in policies or profile in profiles or rule in rules:
+                    logger.info(f"Got matching alert for action: {action_name} on instance: {item['instance']} for resource_id: {item['object_id']} with (policy_name: {item['policy']}, profile_name: {item['dlp_profile']}, rule_name: {item['dlp_rule']})")
+                    resource_id = f"arn:aws:s3:::{item['file_path']}"
+                    # Assumes the last field in the instance name is the account id.
+                    account_id = item["instance"].split('_')[-1]
+                    file.write(f"{account_id}, {resource_id}, {item['policy']}, {item['dlp_profile']}, {item['dlp_rule']}\n")
+                    count += 1
+                    if int(item["timestamp"]) > last_timestamp:
+                        last_timestamp = int(item["timestamp"])
             page=page+1
-            resp = get_status (action_name, token, str(PAGE_SIZE), str(page*PAGE_SIZE))
+            resp = get_alerts (action_name, token, str(PAGE_SIZE), str(page*PAGE_SIZE), start_time)
             logger.debug(resp)
     
     logger.info(f"Got {count} total alerts for the action {action_name}")
-    # TODO move temp file to s3 bucket.
-    # if y:
-    #     files = [f for f in listdir(LOCAL_FILE_SYS) if isfile(join(LOCAL_FILE_SYS, f))]
-    #     for f in files:
-    #         s3_client.upload_file(LOCAL_FILE_SYS + "/" + f, S3_BUCKET, action_name +'/'+ f)
 
+    put_results(file_name, S3_BUCKET, f"{action_name}/{file_name}")
+    put_last_timestamp(S3_BUCKET, action_name, last_timestamp)
+  
 
-def get_status(action_name, token, limit, skip, starttime):
+def get_last_timestamp(bucket, action_name):
+    try:
+        s3 = boto3.client("s3") 
+        object_key = f"{action_name}/last_timestamp_{action_name}.txt"
+        object = s3.get_object(bucket=bucket, key=object_key)
+        timestamp = int(object.read().strip())
+
+    except s3.exceptions.NoSuchKey:
+        logger.debug("Could not find timestamp using 1")
+        timestamp = 1
     
+    return timestamp
+
+
+def put_last_timestamp(bucket, action_name, timestamp):
+    s3 = boto3.client("s3") 
+    object_key = f"{action_name}/last_timestamp_{action_name}.txt"
+    s3.put(bucket=bucket, key=object_key, body=str(timestamp).encode())
+
+
+def put_results(file_name, S3_BUCKET, key):
+    s3 = boto3.client("s3")
+    s3.upload_file(file_name, S3_BUCKET, key)
+
+
+def get_alerts(action_name, token, limit, skip, starttime):
     now = time()
     get_url = f"https://{tenant_fqdn}/api/v1/alerts"
     payload = {"token" : token, 
@@ -83,10 +116,9 @@ def get_status(action_name, token, limit, skip, starttime):
                }
     
     logger.info(f"Calling Netskope API for DLP scan alerts for {action_name}" )
-  
     r = requests.get(get_url, params=payload)
-    
     return r.json()['data']
+
 
 def get_secret(secret_arn):
     
