@@ -272,6 +272,7 @@ Resources:
                   - Effect: Allow
                     Action:
                       - 's3:PutObject'
+                      - 's3:GetObject'
                     Resource:
                       - !Join
                         - '/'
@@ -292,11 +293,11 @@ Resources:
         Role: !GetAtt GetNetskopeDLPScanResultsLFRole.Arn
         Code:
           S3Bucket: !Join ['-', [!FindInMap ["SourceCode", "General", "S3Bucket"], !Ref 'AWS::Region']]
-          S3Key: !Join ['/', [!FindInMap ["SourceCode", "General", "S3Prefix"], 'GetNetskopeSecurityPostureAssesmentLambda.zip']]
+          S3Key: !Join ['/', [!FindInMap ["SourceCode", "General", "S3Prefix"], 'GetNetskopeDLPScanAlertsLambda.zip']]
         Environment:
           Variables:
             tenant_fqdn: !Ref NetskopeTenantFQDN
-            security_assessment_results_s3_bucket: !Ref AssesmentResultsS3Bucket
+            dlp_scan_alert_results_s3_bucket: !Ref AssesmentResultsS3Bucket
             api_token: !Ref APISecret
             LOGLEVEL: 'INFO'
         Runtime: python3.8
@@ -322,7 +323,7 @@ Resources:
               - "GetNetskopeDLPScanResultsLF"
               - "Arn"
           Id: "GetNetskopeDLPScanResultsLF"
-          Input: '{"action":"Label-S3-Objects","policies":"", "profiles": "", "rules": ""}'
+          Input: '{"action":"Label-S3-Objects","policies":"Test-Name-AND-Address-DLP-Alert-Storage-Scanning", "profiles": "", "rules": ""}'
 
   PermissionToInvokeGetNetskopeDLPScanResultsLFS3DLPLabelAction:
     Type: AWS::Lambda::Permission

@@ -1,24 +1,25 @@
-from email import policy
+# Standard library imports
+from datetime import datetime
+from io import StringIO
+import json
+import os
+from time import time
+
+# Lambda native imports
 import boto3
 import botocore
-from datetime import datetime, timezone
-import json
+
+# PyPi imports
 import requests
-import os
-from os import listdir
-from os.path import isfile, join
-from time import time
+
+# Other imports
 from utils.logger import Logger
 
 # Set up  logger
 LOG_LEVEL = os.getenv('LOGLEVEL', 'info')
 logger = Logger(loglevel=LOG_LEVEL)
 
-
-
 s3_client = boto3.client("s3")
-# LOCAL_FILE_SYS = "/tmp"
-LOCAL_FILE_SYS = "./tmp"
 S3_BUCKET = os.environ['dlp_scan_alert_results_s3_bucket']
 tenant_fqdn = os.environ['tenant_fqdn']
 PAGE_SIZE = 100
@@ -34,8 +35,7 @@ AWS_REGIONS={
 
 def lambda_handler(event, context):
 
-    # token = json.loads(get_secret(secret_arn))['token']
-    token = "2730ce508a7e12d1dcd00620f5de7cc2"
+    token = json.loads(get_secret(secret_arn))['token']
     action_name = event['action']
     policies = event['policies']
     profiles = event['profiles']
@@ -44,36 +44,35 @@ def lambda_handler(event, context):
     # get cursor timestamp from s3. Add 1 to it.
     start_time = get_last_timestamp(S3_BUCKET, action_name) + 1
     last_timestamp = start_time 
-
-    file_name = os.path.expandvars(os.path.join(LOCAL_FILE_SYS, f"{tenant_fqdn}.{action_name}.{datetime.now().strftime('%Y%m%d%H%M%S')}"))
-    with open(file_name, "w") as file:
-        page = 0
-        y = 0
-        resp = get_alerts(action_name, token, str(PAGE_SIZE), str(page*PAGE_SIZE), start_time)
+    
+    file_name = f"{tenant_fqdn}.{action_name}.{datetime.now().strftime('%Y%m%d%H%M%S')}"
+    results = StringIO("")
+    page = 0
+    resp = get_alerts(action_name, token, str(PAGE_SIZE), str(page*PAGE_SIZE), start_time)
+    logger.debug(resp)
+    count = 0
+    while len(resp):
+        for item in resp:
+            policy = item["policy"]
+            profile = item["dlp_profile"]
+            rule = item["dlp_rule"]
+            # If the current item is in the configured policy, profile or ruleset for this action then add it to the result.
+            if policy in policies or profile in profiles or rule in rules:
+                logger.info(f"Got matching alert for action: {action_name} on instance: {item['instance']} for resource_id: {item['object_id']} with (policy_name: {item['policy']}, profile_name: {item['dlp_profile']}, rule_name: {item['dlp_rule']})")
+                resource_id = f"arn:aws:s3:::{item['file_path']}"
+                # Assumes the last field in the instance name is the account id.
+                account_id = item["instance"].split('_')[-1]
+                results.write(f"{account_id}, {resource_id}, {item['policy']}, {item['dlp_profile']}, {item['dlp_rule']}\n")
+                count += 1
+                if int(item["timestamp"]) > last_timestamp:
+                    last_timestamp = int(item["timestamp"])
+        page=page+1
+        resp = get_alerts (action_name, token, str(PAGE_SIZE), str(page*PAGE_SIZE), start_time)
         logger.debug(resp)
-        count = 0
-        while len(resp):
-            for item in resp:
-                policy = item["policy"]
-                profile = item["dlp_profile"]
-                rule = item["dlp_rule"]
-                # If the current item is in the configured policy, profile or ruleset for this action then add it to the result.
-                if policy in policies or profile in profiles or rule in rules:
-                    logger.info(f"Got matching alert for action: {action_name} on instance: {item['instance']} for resource_id: {item['object_id']} with (policy_name: {item['policy']}, profile_name: {item['dlp_profile']}, rule_name: {item['dlp_rule']})")
-                    resource_id = f"arn:aws:s3:::{item['file_path']}"
-                    # Assumes the last field in the instance name is the account id.
-                    account_id = item["instance"].split('_')[-1]
-                    file.write(f"{account_id}, {resource_id}, {item['policy']}, {item['dlp_profile']}, {item['dlp_rule']}\n")
-                    count += 1
-                    if int(item["timestamp"]) > last_timestamp:
-                        last_timestamp = int(item["timestamp"])
-            page=page+1
-            resp = get_alerts (action_name, token, str(PAGE_SIZE), str(page*PAGE_SIZE), start_time)
-            logger.debug(resp)
     
     logger.info(f"Got {count} total alerts for the action {action_name}")
 
-    put_results(file_name, S3_BUCKET, f"{action_name}/{file_name}")
+    put_results(results, S3_BUCKET, f"{action_name}/{file_name}")
     put_last_timestamp(S3_BUCKET, action_name, last_timestamp)
   
 
@@ -81,11 +80,14 @@ def get_last_timestamp(bucket, action_name):
     try:
         s3 = boto3.client("s3") 
         object_key = f"{action_name}/last_timestamp_{action_name}.txt"
-        object = s3.get_object(bucket=bucket, key=object_key)
-        timestamp = int(object.read().strip())
+        object = s3.get_object(Bucket=bucket, Key=object_key)
+        timestamp = int(object['Body'].read().strip())
 
-    except s3.exceptions.NoSuchKey:
-        logger.debug("Could not find timestamp using 1")
+    except botocore.exceptions.ClientError as e:
+        logger.debug(f"Could not find timestamp using 1 {e}")
+        timestamp = 1
+    except KeyError:
+        logger.debug("result dictionary invalid.")
         timestamp = 1
     
     return timestamp
@@ -94,12 +96,17 @@ def get_last_timestamp(bucket, action_name):
 def put_last_timestamp(bucket, action_name, timestamp):
     s3 = boto3.client("s3") 
     object_key = f"{action_name}/last_timestamp_{action_name}.txt"
-    s3.put(bucket=bucket, key=object_key, body=str(timestamp).encode())
+    s3.put_object(Bucket=bucket, Key=object_key, Body=str(timestamp).encode())
 
 
-def put_results(file_name, S3_BUCKET, key):
-    s3 = boto3.client("s3")
-    s3.upload_file(file_name, S3_BUCKET, key)
+def put_results(results, bucket, key):
+    if isinstance(results, StringIO):
+        results = results.getvalue()
+    if isinstance(results, str):
+        results = results.encode()
+    if len(results) > 0:
+        s3 = boto3.client("s3")
+        s3.put_object(Bucket=bucket, Key=key, Body=results)
 
 
 def get_alerts(action_name, token, limit, skip, starttime):
