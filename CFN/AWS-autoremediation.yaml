@@ -341,11 +341,12 @@ Resources:
               - "GetNetskopeDLPScanResultsLF"
               - "Arn"
           Id: "GetNetskopeDLPScanResultsLF"
-          Input: !Sub
-            - '{"action":"Label-S3-Objects","policies": ${Policies}, "profiles": ${Profiles}, "rules": ${Rules}}'
-            - { Policies: !Ref S3DLPLabelPolicies}
-            - { Profiles: !Ref S3DLPLabelProfiles}
-            - { Rules: !Ref S3DLPLabelRules}
+          Input: 
+            !Sub
+              - '{"action":"Label-S3-Objects","policies": ${Policies}, "profiles": ${Profiles}, "rules": ${Rules}}'
+              - { Policies: !Ref S3DLPLabelPolicies}
+              - { Profiles: !Ref S3DLPLabelProfiles}
+              - { Rules: !Ref S3DLPLabelRules}
 
   PermissionToInvokeGetNetskopeDLPScanResultsLFS3DLPLabelAction:
     Type: AWS::Lambda::Permission
