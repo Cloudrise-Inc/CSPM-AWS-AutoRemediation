@@ -16,6 +16,12 @@ Metadata:
         default: CIS-1-2-0-4-2 - wide open port 3389 remediation
       S3DLPLabelAction:
         default: DLP Scan Label S3 Object remediation
+      S3DLPLabelPolicies:
+        default: DLP Scan Labeling Enabled DLP Policies
+      S3DLPLabelProfiles:
+        default: DLP Scan Labeling Enabled DLP Profiles
+      S3DLPLabelRules:
+        default: DLP Scan Labeling Enabled DLP Rules
 
 Parameters:
   NetskopeTenantFQDN:
@@ -55,6 +61,18 @@ Parameters:
       - 'yes'
       - 'no'
     Type: 'String'
+  S3DLPLabelPolicies:
+    Default: ""
+    Description: 'A Comma separated list of DLP Policies which should be labeled.'
+    Type: CommaDelimitedList
+  S3DLPLabelProfiles:
+    Default: ""
+    Description: 'A Comma separated list of DLP Profiles which should be labeled.'
+    Type: CommaDelimitedList
+  S3DLPLabelRules:
+    Default: ""
+    Description: 'A Comma separated list of DLP Rules which should be labeled.'
+    Type: CommaDelimitedList
 Conditions: 
   CIS12029VPCFlowLogsEnabled: !Equals
       - !Ref CIS12029VPCFlowLogs
@@ -74,7 +92,7 @@ Conditions:
 Mappings:
       SourceCode:
           General:
-              S3Bucket: 'yd-source'
+              S3Bucket: 'remediation-source-lamda'
               S3Prefix: "AWSAutoremediation"
 
 
