@@ -343,10 +343,10 @@ Resources:
           Id: "GetNetskopeDLPScanResultsLF"
           Input: 
             !Sub
-              - '{"action":"Label-S3-Objects","policies": ${Policies}, "profiles": ${Profiles}, "rules": ${Rules}}'
-              - { Policies: !Ref S3DLPLabelPolicies}
-              - { Profiles: !Ref S3DLPLabelProfiles}
-              - { Rules: !Ref S3DLPLabelRules}
+              - '{"action":"Label-S3-Objects","policies": "${Policies}", "profiles": "${Profiles}", "rules": "${Rules}"}'
+              - Policies: !Join [ ",", !Ref S3DLPLabelPolicies ]
+                Profiles: !Join [ ",", !Ref S3DLPLabelProfiles ]
+                Rules: !Join [ ",", !Ref S3DLPLabelRules ]
 
   PermissionToInvokeGetNetskopeDLPScanResultsLFS3DLPLabelAction:
     Type: AWS::Lambda::Permission
@@ -628,6 +628,88 @@ Resources:
       Bucket: !Ref AssesmentResultsS3Bucket
       prefix: "CIS-1-2-0-4-1/"
 
+  S3DLPLabelActionLambdaRole:
+      Condition: S3DLPLabelActionEnabled
+      Type: 'AWS::IAM::Role'
+      Properties: 
+        RoleName: !Sub "S3DLPLabelActionLambdaRole_${AWS::Region}"
+        Tags: 
+          - Key: Type
+            Value: S3DLPLabelActionLambdaRole
+        AssumeRolePolicyDocument:
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service:
+                  - lambda.amazonaws.com
+              Action:
+                - sts:AssumeRole
+        Path: '/'
+        Policies:
+            - PolicyName: !Sub "S3DLPLabelActionLambdaPolicy_${AWS::Region}"
+              PolicyDocument:
+                Statement:
+                  - Effect: Allow
+                    Action:
+                      - "logs:CreateLogGroup"
+                      - "logs:CreateLogStream"
+                      - "logs:PutLogEvents"
+                    Resource:
+                      - "*"
+                  - Effect: Allow
+                    Action:
+                      - 's3:GetObject'
+                    Resource:
+                       - !Join
+                        - '/'
+                        - - !GetAtt AssesmentResultsS3Bucket.Arn
+                          - '*'
+            
+  S3DLPLabelActionLambda:
+      Condition: S3DLPLabelActionEnabled
+      Type: 'AWS::Lambda::Function'
+      DependsOn: S3DLPLabelActionLambdaRole
+      Properties:
+        Description: >-
+          This lambda function called for the Netskope findings for DLP Scan alerts matching listed Policies profiles and rules.
+        Handler: 'lambda_function.lambda_handler'
+        Role: !GetAtt S3DLPLabelActionLambdaRole.Arn
+        Code:
+          S3Bucket: !Join ['-', [!FindInMap ["SourceCode", "General", "S3Bucket"], !Ref 'AWS::Region']]
+          S3Key: !Join ['/', [!FindInMap ["SourceCode", "General", "S3Prefix"], 'S3DLPLabelActionLambda.zip']]
+        Environment:
+          Variables:
+            AWS_PARTITION: aws
+            LOGLEVEL: 'INFO'
+            AssesmentResultsS3Bucket: !Ref AssesmentResultsS3Bucket
+        Runtime: python3.8
+        MemorySize: 128
+        Timeout: 300
+        Tags: 
+          - Key: Type
+            Value: S3DLPLabelActionLambda
+
+  PermissionToInvokeS3DLPLabelActionLambda: 
+    Condition: S3DLPLabelActionEnabled
+    Type: AWS::Lambda::Permission
+    Properties: 
+      FunctionName: 
+        Ref: "S3DLPLabelActionLambda"
+      Action: "lambda:InvokeFunction"
+      Principal: s3.amazonaws.com
+      SourceArn: !GetAtt AssesmentResultsS3Bucket.Arn
+
+  S3DLPLabelActionPutS3BucketEventLambdaFunctionTrigger:
+    Condition: S3DLPLabelActionEnabled
+    Type: 'Custom::LambdaTrigger'
+    DependsOn: PermissionToInvokeS3DLPLabelActionLambda
+    Properties:
+      ServiceToken: !GetAtt PutS3BucketEventLambdaFunction.Arn
+      LambdaArn: !GetAtt S3DLPLabelActionLambda.Arn
+      Bucket: !Ref AssesmentResultsS3Bucket
+      prefix: "Label-S3-Objects/"
+
+
 Outputs:
   AssesmentResultsS3Bucket:
     Value: !Ref AssesmentResultsS3Bucket
@@ -648,4 +730,8 @@ Outputs:
     Condition: CIS12041SecurityGroupsEnabled
     Description: Lambda to disable wode open port 22 or 3389 in Security Groups
     Value: !GetAtt CIS12041SecurityGroupsLambda.Arn
+  S3DLPLabelActionLambda:
+    Condition: S3DLPLabelActionEnabled
+    Description: Lambda to Label s3 buckets and objects which have been found by DLP Scan
+    Value: !GetAtt S3DLPLabelActionLambda.Arn
   

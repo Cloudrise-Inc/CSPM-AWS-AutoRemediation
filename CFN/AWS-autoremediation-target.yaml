@@ -137,6 +137,38 @@ Resources:
                     Resource:
                       - !Sub "arn:aws:iam::${AWS::AccountId}:role/CIS-1-2-0-4-1-SecurityGroupsTargetRole_${AWS::Region}"
 
+  S3DLPLabelActionTargetRole:
+      Type: 'AWS::IAM::Role'
+      Properties: 
+        RoleName: !Sub "S3DLPLabelActionTargetRole_${AWS::Region}"
+        Tags: 
+          - Key: Type
+            Value: !Sub "S3DLPLabelActionTargetRole_${AWS::Region}"
+        AssumeRolePolicyDocument:
+          Version: 2012-10-17
+          Statement:
+            - Effect: Allow
+              Principal:
+                AWS: 
+                  - !Sub "arn:aws:iam::${AWSManagementAccount}:role/S3DLPLabelActionLambdaRole_${AWS::Region}"
+              Action:
+                - 'sts:AssumeRole'
+        Path: '/'
+        Policies:
+            - PolicyName: !Sub "S3DLPLabelActionTargetRole_${AWS::Region}"
+              PolicyDocument:
+                Version: "2012-10-17"
+                Statement:
+                  - Effect: Allow
+                    Action:
+                      - 's3:GetBucketTagging'
+                      - 's3:PutBucketTagging'
+                      - 's3:GetObjectTagging'
+                      - 's3:PutObjectTagging'
+                    Resource:
+                      - '*'
+
+
 Outputs:
   CIS12039VPCFlowLogsRole:
     Value: !Ref CIS12039VPCFlowLogsRole
@@ -147,4 +179,7 @@ Outputs:
   CIS12041SecurityGroupsTargetRole:
     Value: !Ref CIS12041SecurityGroupsTargetRole
     Description: Roles to be used for the Security Group remediation
+  S3DLPLabelActionTargetRole:
+    Value: !Ref S3DLPLabelActionTargetRole
+    Description: Roles to be used for the S3 DLP Label Action
   
