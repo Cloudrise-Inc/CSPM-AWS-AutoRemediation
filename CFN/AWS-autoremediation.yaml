@@ -77,12 +77,10 @@ Parameters:
     Default: ""
     Description: 'A Comma separated list of DLP Rules which should be labeled.'
     Type: CommaDelimitedList
-S3DLPLabelBucketLabel:
-    Default: ''
+  S3DLPLabelBucketLabel:
     Description: 'The bucket label to attach to the bucket: tag is "S3DLPScanLabel"'
     Type: 'String'
-S3DLPLabelObjectLabel:
-    Default: ''
+  S3DLPLabelObjectLabel:
     Description: 'The object label to attach to the object: tag is "S3DLPScanLabel"'
     Type: 'String'
 
@@ -677,6 +675,11 @@ Resources:
                         - '/'
                         - - !GetAtt AssesmentResultsS3Bucket.Arn
                           - '*'
+                  - Effect: Allow
+                    Action:
+                      - 'sts:AssumeRole'
+                    Resource:
+                      - "*"
             
   S3DLPLabelActionLambda:
       Condition: S3DLPLabelActionEnabled
@@ -694,8 +697,10 @@ Resources:
           Variables:
             AWS_PARTITION: aws
             LOGLEVEL: 'INFO'
-            BUCKET_LABEL: !Ref S3DLPLabelBucketLabel
-            OBJECT_LABEL: !Ref S3DLPLabelObjectLabel
+            BUCKET_LABEL: 
+              Ref: S3DLPLabelBucketLabel
+            OBJECT_LABEL: 
+              Ref: S3DLPLabelObjectLabel
             AssesmentResultsS3Bucket: !Ref AssesmentResultsS3Bucket
         Runtime: python3.8
         MemorySize: 128
@@ -745,8 +750,12 @@ Outputs:
     Condition: CIS12041SecurityGroupsEnabled
     Description: Lambda to disable wode open port 22 or 3389 in Security Groups
     Value: !GetAtt CIS12041SecurityGroupsLambda.Arn
+  S3DLPLabelActionLambdaRole:
+    Condition: S3DLPLabelActionEnabled
+    Description: Label S3 buckets and objects from DLP Scan Results Lambda Execution Role
+    Value: !GetAtt S3DLPLabelActionLambdaRole.Arn
   S3DLPLabelActionLambda:
     Condition: S3DLPLabelActionEnabled
-    Description: Lambda to Label s3 buckets and objects which have been found by DLP Scan
+    Description: Lambda to Label S3 buckets and objects from DLP Scan Results
     Value: !GetAtt S3DLPLabelActionLambda.Arn
   

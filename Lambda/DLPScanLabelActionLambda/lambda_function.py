@@ -48,7 +48,7 @@ def lambda_handler(event, context):
         inFile = s3.open(input_file, 'r', newline='\n', encoding='utf-8-sig')
         fileReader = csv.reader(inFile)
         for row in fileReader:
-            label_artifacts(row)
+            label_artifacts(row)    
     except Exception as e:
         logger.error(e)
         logger.error('Error getting object from bucket. Make sure they exist and your bucket is in the same region as this function. '+ input_file)
@@ -75,14 +75,24 @@ def extract_bucket_and_key(resource_id):
     return bucket, key
 
 def tag_bucket(account_id, role, bucket, **tags):
-    # Assume the role to perform on the target.
-    sess = BotoSession(account_id, role)
-    cls3 = sess.client('s3')
-    existing_tags = cls3.get_bucket_tagging(Bucket=bucket)
-
-    # pull Tags out of list in TagSet
-    existing_tags = {i['Key']: i['Value'] for i in existing_tags['TagSet']}
-    new_tags = {**existing_tags, **tags}
+    try:
+        # Assume the role to perform on the target.
+        sess = BotoSession(account_id, role)
+        cls3 = sess.client('s3')
+        existing_tags = cls3.get_bucket_tagging(Bucket=bucket)
+        # pull Tags out of list in TagSet
+        existing_tags = {i['Key']: i['Value'] for i in existing_tags['TagSet']}
+        new_tags = {**existing_tags, **tags}
+    except ClientError as ce:
+        if ce.response['Error']['Code'] == 'NoSuchTagSet':
+            logger.debug('No tags found')
+            new_tags = { **tags }
+        elif ce.response['Error']['Code'] == 'AccessDenied':
+            logger.warning("Could not access account: {} and role {}".format(account_id, role))
+            return
+        else:
+            raise
+    
 
     response = cls3.put_bucket_tagging(Bucket=bucket,
         Tagging={
@@ -94,15 +104,23 @@ def tag_bucket(account_id, role, bucket, **tags):
     return response['ResponseMetadata']['HTTPStatusCode'] == 200
  
 def tag_object(account_id, role, bucket, key, **tags):
-    # Assume the role to perform on the target.
-    sess = BotoSession(account_id, role)
-    cls3 = sess.client('s3')
-    existing_tags = cls3.get_object_tagging(Bucket=bucket, Key=key)
-
-    # pull Tags out of list in TagSet
-    existing_tags = {i['Key']: i['Value'] for i in existing_tags['TagSet']}
-    new_tags = {**existing_tags, **tags}
-
+    try:
+        # Assume the role to perform on the target.
+        sess = BotoSession(account_id, role)
+        cls3 = sess.client('s3')
+        existing_tags = cls3.get_object_tagging(Bucket=bucket, Key=key)
+        # pull Tags out of list in TagSet
+        existing_tags = {i['Key']: i['Value'] for i in existing_tags['TagSet']}
+        new_tags = {**existing_tags, **tags}
+    except ClientError as ce:
+        if ce.response['Error']['Code'] == 'NoSuchTagSet':
+            new_tags = { **tags }
+        elif ce.response['Error']['Code'] == 'AccessDenied':
+            logger.warning("Could not access account: {} and role {}".format(account_id, role))
+            return
+        else:
+            raise
+    
     response = cls3.put_object_tagging(Bucket=bucket, Key=key,
         Tagging={
             'TagSet': [{'Key': str(k), 'Value': str(v)} for k, v in new_tags.items()]
