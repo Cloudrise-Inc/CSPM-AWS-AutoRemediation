@@ -22,6 +22,10 @@ Metadata:
         default: DLP Scan Labeling Enabled DLP Profiles
       S3DLPLabelRules:
         default: DLP Scan Labeling Enabled DLP Rules
+      S3DLPLabelBucketLabel:
+        default: DLP Scan Labeling Action Bucket Label
+      S3DLPLabelObjectLabel:
+        default: DLP Scan Labeling Action Object Label
 
 Parameters:
   NetskopeTenantFQDN:
@@ -73,6 +77,15 @@ Parameters:
     Default: ""
     Description: 'A Comma separated list of DLP Rules which should be labeled.'
     Type: CommaDelimitedList
+S3DLPLabelBucketLabel:
+    Default: ''
+    Description: 'The bucket label to attach to the bucket: tag is "S3DLPScanLabel"'
+    Type: 'String'
+S3DLPLabelObjectLabel:
+    Default: ''
+    Description: 'The object label to attach to the object: tag is "S3DLPScanLabel"'
+    Type: 'String'
+
 Conditions: 
   CIS12029VPCFlowLogsEnabled: !Equals
       - !Ref CIS12029VPCFlowLogs
@@ -681,6 +694,8 @@ Resources:
           Variables:
             AWS_PARTITION: aws
             LOGLEVEL: 'INFO'
+            BUCKET_LABEL: !Ref S3DLPLabelBucketLabel
+            OBJECT_LABEL: !Ref S3DLPLabelObjectLabel
             AssesmentResultsS3Bucket: !Ref AssesmentResultsS3Bucket
         Runtime: python3.8
         MemorySize: 128
