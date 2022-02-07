@@ -1,10 +1,7 @@
 import csv
-import io
 import json
 import logging
 import os
-import time
-import uuid
 import urllib
 
 import boto3
@@ -25,8 +22,8 @@ AWS_REGION = os.getenv('AWS_REGION', 'us-east-1')
 AWS_PARTITION = os.getenv('AWS_PARTITION', 'aws')
 
 # TODO: Some default bucket and Objecttags.
-BUCKET_TAGS = os.getenv('DLP_SCAN_BUCKET_LABELS', "[Test Label]")
-OBJECT_TAGS = os.getenv('DLP_SCAN_OBJECT_LABELS', "[Test Label]")
+BUCKET_LABEL = os.getenv("BUCKET_LABEL", None)
+OBJECT_LABEL = os.getenv("OBJECT_LABEL", None)
 LAMBDA_ROLE += '_' + AWS_REGION
 BOTO_CONFIG = Config(
     retries={
@@ -39,6 +36,8 @@ def lambda_handler(event, context):
 
     AWS = AWSClient(AWS_PARTITION, AWS_REGION)
     s3 = s3fs.S3FileSystem(anon=False)
+
+    logger.info(json.dumps(event))
 
     logger.debug(event)
     bucket = event['Records'][0]['s3']['bucket']['name']
@@ -60,12 +59,12 @@ def label_artifacts(row):
     resource_id = row[1]
     logger.info('Got event: '+account_id+' '+ resource_id)
     bucket, key = extract_bucket_and_key(resource_id)
-    if len(BUCKET_TAGS):
-        tags = {i['Key']: i['Value'] for i in BUCKET_TAGS}
-        tag_bucket(account_id, LAMBDA_ROLE, bucket, tags)
-    if len(OBJECT_TAGS):
-        tags = {i['Key']: i['Value'] for i in OBJECT_TAGS}
-        tag_object(account_id, LAMBDA_ROLE, bucket, key, tags)
+    if BUCKET_LABEL is not None:
+        tags = {"S3DLPScanLabel": BUCKET_LABEL}
+        tag_bucket(account_id, LAMBDA_ROLE, bucket, **tags)
+    if OBJECT_LABEL is not None:
+        tags = {"S3DLPScanLabel": OBJECT_LABEL}
+        tag_object(account_id, LAMBDA_ROLE, bucket, key, **tags)
     
     logger.info('Remediation was successfully invoked To label the bucket and resource for' +account_id+' '+ resource_id )
 
