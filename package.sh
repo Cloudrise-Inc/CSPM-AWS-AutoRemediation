@@ -6,7 +6,9 @@ TARGET=Lambda/GetNetskopeDLPScanAlertsLambda
 ZIP_NAME=GetNetskopeDLPScanAlertsLambda
 cd $TARGET 
 
-pip install --target ./package -r requirements.txt --no-deps
+pip install --target ./package -r requirements.txt
+# pip install --target ./package -r requirements.txt --no-deps
+
 cd package
 zip -r ../$ZIP_NAME.zip .
 cd ..
