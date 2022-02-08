@@ -45,7 +45,7 @@ def lambda_handler(event, context):
     start_time = get_last_timestamp(S3_BUCKET, action_name) + 1
     last_timestamp = start_time 
     
-    file_name = f"{tenant_fqdn}.{action_name}.{datetime.now().strftime('%Y%m%d%H%M%S')}"
+    file_name = f"{tenant_fqdn}.{action_name}.{datetime.now().strftime('%Y%m%d%H%M%S')}.csv"
     results = StringIO("")
     page = 0
     resp = get_alerts(action_name, token, str(PAGE_SIZE), str(page*PAGE_SIZE), start_time)

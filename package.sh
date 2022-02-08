@@ -1,8 +1,9 @@
 #! /bin/bash
 echo on
-TARGET=Lambda/DLPScanLabelActionLambda
-ZIP_NAME=S3DLPLabelActionLambda
-
+# TARGET=Lambda/DLPScanLabelActionLambda
+# ZIP_NAME=S3DLPLabelActionLambda
+TARGET=Lambda/GetNetskopeDLPScanAlertsLambda
+ZIP_NAME=GetNetskopeDLPScanAlertsLambda
 cd $TARGET 
 
 pip install --target ./package -r requirements.txt --no-deps

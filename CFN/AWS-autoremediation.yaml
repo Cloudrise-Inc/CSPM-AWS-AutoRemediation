@@ -530,6 +530,10 @@ Resources:
                                           'Name': 'prefix',
                                           'Value': prefix
                                       },
+                                      {
+                                          'Name': 'suffix',
+                                          'Value': '.csv'
+                                      }
                                   ]
                               }
                           }
